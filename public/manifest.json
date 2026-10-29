@@ -1,0 +1,18 @@
+{
+  "name": "Copiloto Carretera - Asistente & Seguridad",
+  "short_name": "Copiloto",
+  "description": "Copiloto inteligente y de seguridad para carretera con navegación en tiempo real, OSRM y telemetría OBD-II.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070b14",
+  "theme_color": "#070b14",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

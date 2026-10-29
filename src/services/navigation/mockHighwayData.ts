@@ -1,0 +1,112 @@
+import { RouteCoordinate, PoiItem } from '../../types/navigation';
+
+// Coordenadas de un tramo de autopista representativo (ej. Corredor Carretero de Autopista)
+export const HIGHWAY_ROUTE_POINTS: RouteCoordinate[] = [
+  { lat: 20.6736, lng: -103.3440, speedLimitKmh: 80 },  // Salida metropolitana
+  { lat: 20.6950, lng: -103.3020, speedLimitKmh: 90 },
+  { lat: 20.7300, lng: -103.2450, speedLimitKmh: 110 }, // Incorporación a Autopista
+  { lat: 20.7650, lng: -103.1700, speedLimitKmh: 110 },
+  { lat: 20.8050, lng: -103.0900, speedLimitKmh: 110 },
+  { lat: 20.8400, lng: -103.0100, speedLimitKmh: 110 },
+  { lat: 20.8900, lng: -102.9200, speedLimitKmh: 110 },
+  { lat: 20.9400, lng: -102.8100, speedLimitKmh: 110 },
+  { lat: 20.9950, lng: -102.7200, speedLimitKmh: 110 },
+  { lat: 21.0500, lng: -102.6100, speedLimitKmh: 110 },
+  { lat: 21.1200, lng: -102.5000, speedLimitKmh: 110 },
+  { lat: 21.1800, lng: -102.3900, speedLimitKmh: 110 },
+  { lat: 21.2500, lng: -102.2800, speedLimitKmh: 110 },
+];
+
+export const HIGHWAY_POIS: PoiItem[] = [
+  {
+    id: 'poi_gas_1',
+    name: 'Gasolinera Pemex km 54 (Última Oportunidad)',
+    category: 'gas_station',
+    lat: 20.7680,
+    lng: -103.1650,
+    distanceKm: 8.4,
+    description: 'Estación de servicio con tienda 24h, sanitarios limpios y calibrador de aire.',
+    isOpen24h: true,
+    fuelAdvice: {
+      isRecommended: true,
+      reason: 'Cargar aquí es crítico: La siguiente estación está a 86 km y tu reserva calculada es de ~65 km.',
+      nextStationDistanceKm: 86,
+    },
+    weatherInfo: { tempC: 33, condition: 'Soleado • Asfalto Seco' },
+  },
+  {
+    id: 'poi_vulca_1',
+    name: 'Vulcanizadora y Talachas "El Parche 24h"',
+    category: 'vulcanizadora',
+    lat: 20.8120,
+    lng: -103.0780,
+    distanceKm: 18.2,
+    description: 'Reparación de ponchaduras al instante, balanceo, venta de cámaras y parches para alta velocidad.',
+    isOpen24h: true,
+    phone: '33 1234 5678',
+    weatherInfo: { tempC: 34, condition: 'Asfalto Caliente 52°C' },
+  },
+  {
+    id: 'poi_deadzone_1',
+    name: 'Alerta: Zona Sin Cobertura Telefónica',
+    category: 'dead_zone',
+    lat: 20.8850,
+    lng: -102.9300,
+    distanceKm: 29.5,
+    description: 'Tramo de 38 km entre barrancas montañosas sin señal 3G/4G/5G de ninguna compañía.',
+    deadZoneInfo: {
+      lengthKm: 38,
+      noticeDistanceKm: 12,
+    },
+  },
+  {
+    id: 'poi_risk_1',
+    name: 'Tramo de Alto Riesgo Nocturno (Curvas Peligrosas)',
+    category: 'risk_zone',
+    lat: 20.9500,
+    lng: -102.7950,
+    distanceKm: 42.1,
+    description: 'Descenso pronunciado con curvas ciegas. Frecuente presencia de neblina espesa y asfalto resbaloso.',
+    riskInfo: {
+      dangerLevel: 'high',
+      nightOnly: true,
+      reason: 'Peligro de derrape y baja visibilidad entre 20:00 y 06:00. Reducir velocidad a 70 km/h.',
+    },
+  },
+  {
+    id: 'poi_mechanic_1',
+    name: 'Taller Mecánico y Grúa de Auxilio Vial',
+    category: 'mechanic',
+    lat: 21.0550,
+    lng: -102.6000,
+    distanceKm: 61.0,
+    description: 'Especialistas en calentamiento de radiadores, alternadores, bandas y frenos de carretera.',
+    isOpen24h: true,
+    phone: '44 9876 5432',
+  },
+  {
+    id: 'poi_gas_2',
+    name: 'Oxxo Gas & Restaurante Los Encinos km 140',
+    category: 'gas_station',
+    lat: 21.1250,
+    lng: -102.4900,
+    distanceKm: 94.4,
+    description: 'Paradero grande con comida caliente, diesel, gasolina premium y tienda 24h.',
+    isOpen24h: true,
+    fuelAdvice: {
+      isRecommended: false,
+      reason: 'Estación amplia pero distante. Solo accesible si cargaste en la gasolinera del km 54.',
+      nextStationDistanceKm: 45,
+    },
+  },
+  {
+    id: 'poi_rest_1',
+    name: 'Paradero y Mirador Seguro con Vigilancia',
+    category: 'rest_stop',
+    lat: 21.1850,
+    lng: -102.3800,
+    distanceKm: 108.0,
+    description: 'Área de descanso iluminada con vigilancia de Guardia Nacional, baños y sombra.',
+    isOpen24h: true,
+  },
+];
