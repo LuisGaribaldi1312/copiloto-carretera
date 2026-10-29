@@ -29,6 +29,8 @@ import {
   X,
   Plus,
   Minus,
+  ChevronDown,
+  ChevronUp,
 } from '../common/Icons';
 
 // Configurar iconos por defecto de Leaflet para evitar 404
@@ -114,6 +116,48 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
   });
 
   const [activeRoadAlert, setActiveRoadAlert] = useState<PoiItem | null>(null);
+
+  // Detección dinámica y adaptación inteligente a orientación (Vertical vs Horizontal / Landscape)
+  const [isLandscape, setIsLandscape] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth > window.innerHeight;
+    }
+    return false;
+  });
+  const [isHudMinimized, setIsHudMinimized] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleOrientationOrResize = () => {
+      const landscape = window.innerWidth > window.innerHeight;
+      setIsLandscape(landscape);
+
+      // Auto-minimizar HUD en modo horizontal si la pantalla es de baja altura (celulares) para no tapar la carretera
+      if (landscape && window.innerHeight < 550) {
+        setIsHudMinimized(true);
+      }
+
+      // Reajustar tamaño de Leaflet inmediatamente y con ráfaga suave
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.invalidateSize();
+        setTimeout(() => mapInstanceRef.current?.invalidateSize(), 150);
+        setTimeout(() => mapInstanceRef.current?.invalidateSize(), 400);
+      }
+    };
+
+    window.addEventListener('resize', handleOrientationOrResize);
+    window.addEventListener('orientationchange', handleOrientationOrResize);
+    if (window.screen?.orientation) {
+      window.screen.orientation.addEventListener('change', handleOrientationOrResize);
+    }
+
+    return () => {
+      window.removeEventListener('resize', handleOrientationOrResize);
+      window.removeEventListener('orientationchange', handleOrientationOrResize);
+      if (window.screen?.orientation) {
+        window.screen.orientation.removeEventListener('change', handleOrientationOrResize);
+      }
+    };
+  }, []);
 
   // Verificación reactiva de disponibilidad de Leaflet
   const [isLeafletReady, setIsLeafletReady] = useState<boolean>(
@@ -785,7 +829,7 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
     : null;
 
   return (
-    <div className="relative w-full h-full overflow-hidden bg-slate-950 select-none">
+    <div className={`relative w-full h-full overflow-hidden bg-slate-950 select-none ${isLandscape ? 'orientation-landscape' : 'orientation-portrait'}`}>
       {/* Contenedor del Mapa Leaflet 100% Pantalla Completa Garantizado */}
       <div
         ref={mapContainerRef}
@@ -801,13 +845,13 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
       {/* ======================================================== */}
       {/* 1. BARRA SUPERIOR FLOTANTE: BUSCADOR & ACCIONES DE IA     */}
       {/* ======================================================== */}
-      <div className="absolute top-3 left-3 right-3 sm:left-5 sm:right-5 z-[1100] flex flex-col gap-2 pointer-events-none">
-        <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5">
+      <div className="absolute top-2 left-2 right-2 sm:top-3 sm:left-5 sm:right-5 landscape:top-2 landscape:left-2 landscape:right-auto landscape:max-w-xl z-[1100] flex flex-col gap-1.5 sm:gap-2 pointer-events-none transition-all">
+        <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-1.5 sm:gap-2.5">
           {/* Buscador Dinámico de Destinos y Negocios */}
-          <div className="relative pointer-events-auto flex-1 min-w-[240px] max-w-xl">
-            <div className="bg-slate-900/95 border border-slate-700/80 rounded-2xl p-1.5 sm:p-2 shadow-2xl backdrop-blur-xl flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                <Search className="w-4 h-4" />
+          <div className="relative pointer-events-auto flex-1 min-w-[200px] sm:min-w-[240px] max-w-xl">
+            <div className="bg-slate-900/95 border border-slate-700/80 rounded-2xl p-1.5 sm:p-2 shadow-2xl backdrop-blur-xl flex items-center gap-1.5 sm:gap-2">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </div>
               <input
                 type="text"
@@ -825,24 +869,24 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
                   title="Cancelar ruta"
                   className="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
               )}
             </div>
 
             {/* Menú Desplegable de Sugerencias de Búsqueda */}
             {showSearchDropdown && searchResults.length > 0 && (
-              <div className="absolute left-0 right-0 top-13 sm:top-14 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden z-[1200] max-h-60 overflow-y-auto">
+              <div className="absolute left-0 right-0 top-11 sm:top-14 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden z-[1200] max-h-56 overflow-y-auto">
                 {searchResults.map((place) => (
                   <button
                     key={place.placeId}
                     onClick={() => handleSelectSearchPlace(place)}
-                    className="w-full text-left px-3.5 py-2.5 hover:bg-slate-800 border-b border-slate-800/80 last:border-none flex items-center gap-2.5 transition-all"
+                    className="w-full text-left px-3 py-2 sm:px-3.5 sm:py-2.5 hover:bg-slate-800 border-b border-slate-800/80 last:border-none flex items-center gap-2 transition-all"
                   >
-                    <MapPin className="w-4 h-4 text-amber-400 shrink-0" />
+                    <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                     <div className="truncate">
                       <div className="text-xs font-bold text-white truncate">{place.name}</div>
-                      <div className="text-[11px] text-slate-400 truncate">{place.fullAddress}</div>
+                      <div className="text-[10px] sm:text-[11px] text-slate-400 truncate">{place.fullAddress}</div>
                     </div>
                   </button>
                 ))}
@@ -851,19 +895,19 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
           </div>
 
           {/* Grupo de Botones Inteligentes: DeepMind IA + Seguridad + Límite 110 */}
-          <div className="flex items-center gap-2 pointer-events-auto shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 pointer-events-auto shrink-0">
             {/* Botón DeepMind Copilot AI */}
             <button
               onClick={() => setIsDeepMindModalOpen(true)}
               title="Abrir Asistente Cognitivo Google DeepMind"
-              className="px-3 py-2 sm:px-3.5 sm:py-2.5 bg-gradient-to-r from-indigo-600 via-indigo-500 to-amber-500 hover:from-indigo-500 hover:to-amber-400 text-white font-black rounded-2xl shadow-2xl text-xs flex items-center gap-2 transition-all border border-indigo-400/50 group"
+              className="px-2.5 py-1.5 sm:px-3.5 sm:py-2.5 bg-gradient-to-r from-indigo-600 via-indigo-500 to-amber-500 hover:from-indigo-500 hover:to-amber-400 text-white font-black rounded-2xl shadow-2xl text-[11px] sm:text-xs flex items-center gap-1.5 sm:gap-2 transition-all border border-indigo-400/50 group"
             >
-              <Brain className="w-4 h-4 text-amber-300 group-hover:rotate-12 transition-transform" />
-              <span className="hidden xs:inline">DeepMind IA</span>
+              <Brain className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300 group-hover:rotate-12 transition-transform" />
+              <span className="hidden sm:inline landscape:hidden lg:landscape:inline">DeepMind IA</span>
               {isDeepMindAnalyzing ? (
                 <span className="animate-spin text-[10px]">✨</span>
               ) : (
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               )}
             </button>
 
@@ -871,25 +915,25 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
             <button
               onClick={() => setIsSecurityModalOpen(true)}
               title="Consultar Horarios Seguros y Tramos Críticos"
-              className="px-3 py-2 sm:px-3.5 sm:py-2.5 bg-slate-900/95 hover:bg-slate-800 text-amber-400 font-bold rounded-2xl shadow-2xl text-xs flex items-center gap-1.5 transition-all border border-slate-700/90"
+              className="px-2.5 py-1.5 sm:px-3.5 sm:py-2.5 bg-slate-900/95 hover:bg-slate-800 text-amber-400 font-bold rounded-2xl shadow-2xl text-[11px] sm:text-xs flex items-center gap-1.5 transition-all border border-slate-700/90"
             >
-              <ShieldCheck className="w-4 h-4 stroke-[2.5]" />
-              <span className="hidden sm:inline">Seguridad & Horarios</span>
+              <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
+              <span className="hidden md:inline landscape:hidden xl:landscape:inline">Seguridad & Horarios</span>
             </button>
 
             {/* Placa Límite Oficial MAX 110 */}
-            <div className="w-10 h-10 sm:w-11 sm:h-11 p-1 bg-white border-2 sm:border-[3px] border-red-600 rounded-full flex flex-col items-center justify-center shadow-2xl shrink-0">
-              <span className="text-[7px] font-black text-slate-800 -mb-0.5 leading-none">MAX</span>
-              <span className="text-sm sm:text-base font-black text-slate-950 leading-none">110</span>
+            <div className="w-8 h-8 sm:w-11 sm:h-11 p-0.5 sm:p-1 bg-white border-2 sm:border-[3px] border-red-600 rounded-full flex flex-col items-center justify-center shadow-2xl shrink-0">
+              <span className="text-[6px] sm:text-[7px] font-black text-slate-800 -mb-0.5 leading-none">MAX</span>
+              <span className="text-xs sm:text-base font-black text-slate-950 leading-none">110</span>
             </div>
           </div>
         </div>
 
         {/* Banner de Próxima Maniobra OSRM */}
         {osrmRoute && (
-          <div className="bg-slate-900/95 border border-slate-700/80 rounded-2xl p-2.5 sm:p-3 shadow-2xl backdrop-blur-md flex items-center gap-3 pointer-events-auto max-w-lg">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-amber-500 rounded-xl flex items-center justify-center text-slate-950 font-black shrink-0 shadow-lg shadow-amber-500/25">
-              <Navigation className="w-5 h-5 stroke-[2.5]" />
+          <div className="bg-slate-900/95 border border-slate-700/80 rounded-2xl p-2 sm:p-3 shadow-2xl backdrop-blur-md flex items-center gap-2.5 pointer-events-auto max-w-sm sm:max-w-lg transition-all">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-amber-500 rounded-xl flex items-center justify-center text-slate-950 font-black shrink-0 shadow-lg shadow-amber-500/25">
+              <Navigation className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
             </div>
             <div className="space-y-0.5 flex-1 truncate">
               <div className="text-[10px] sm:text-[11px] text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
@@ -902,8 +946,8 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
               </div>
             </div>
             <div className="text-right shrink-0">
-              <span className="text-[9px] text-slate-400 uppercase font-semibold block">Hacia</span>
-              <strong className="text-xs text-white truncate max-w-[110px] block">
+              <span className="text-[8px] sm:text-[9px] text-slate-400 uppercase font-semibold block">Hacia</span>
+              <strong className="text-xs text-white truncate max-w-[90px] sm:max-w-[110px] block">
                 {destination?.name || 'Destino'}
               </strong>
             </div>
@@ -920,21 +964,21 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
 
         {/* Mensaje de Ayuda y Negocios Cargados */}
         {!destination && (
-          <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl px-3 py-1.5 shadow-lg backdrop-blur-md text-[11px] text-slate-300 flex items-center justify-between pointer-events-auto max-w-lg">
-            <div className="flex items-center gap-2">
+          <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl px-3 py-1 shadow-lg backdrop-blur-md text-[10px] sm:text-[11px] text-slate-300 flex items-center justify-between pointer-events-auto max-w-sm sm:max-w-lg">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
-              <span>Ubicación centrada. <strong>Toca cualquier punto en el mapa</strong> o busca para trazar ruta.</span>
+              <span>Ubicación centrada. <strong>Toca el mapa</strong> o busca para trazar ruta.</span>
             </div>
             {nearbyBusinesses.length > 0 && (
-              <span className="text-[10px] font-bold bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full ml-2 shrink-0 border border-amber-500/30">
-                {nearbyBusinesses.length} Negocios en zona
+              <span className="text-[9px] sm:text-[10px] font-bold bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full ml-1.5 shrink-0 border border-amber-500/30">
+                {nearbyBusinesses.length} Negocios
               </span>
             )}
           </div>
         )}
 
         {routeError && (
-          <div className="bg-rose-950/90 border border-rose-700 rounded-xl px-3 py-2 shadow-lg backdrop-blur-md text-xs text-rose-200 pointer-events-auto max-w-md">
+          <div className="bg-rose-950/90 border border-rose-700 rounded-xl px-3 py-1.5 shadow-lg backdrop-blur-md text-xs text-rose-200 pointer-events-auto max-w-md">
             ⚠️ {routeError}
           </div>
         )}
@@ -943,28 +987,28 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
       {/* ======================================================== */}
       {/* 2. MUELLE DERECHO: ACCIONES RÁPIDAS AUTOMOTRICES (DOCK)  */}
       {/* ======================================================== */}
-      <div className="absolute right-3 sm:right-5 top-24 sm:top-28 z-[1100] flex flex-col items-center gap-2.5 pointer-events-auto">
+      <div className="absolute right-2 sm:right-5 top-14 sm:top-24 landscape:top-12 landscape:right-2 z-[1100] flex flex-col items-center gap-1.5 sm:gap-2 pointer-events-auto transition-all">
         {/* Recentrar en GPS */}
         <button
           onClick={handleRecenter}
           title="Recentrar en mi Ubicación Actual"
-          className="w-11 h-11 bg-slate-900/95 hover:bg-slate-800 border border-slate-700/80 rounded-2xl text-amber-400 shadow-2xl backdrop-blur-xl flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+          className="w-9 h-9 sm:w-11 sm:h-11 bg-slate-900/95 hover:bg-slate-800 border border-slate-700/80 rounded-2xl text-amber-400 shadow-2xl backdrop-blur-xl flex items-center justify-center transition-all hover:scale-105 active:scale-95"
         >
-          <Crosshair className="w-5 h-5" />
+          <Crosshair className="w-4 h-4 sm:w-5 sm:h-5" />
         </button>
 
         {/* Alternar Modo GPS (Real / Simulado) */}
         <button
           onClick={toggleGpsMode}
           title="Alternar GPS Real Satelital / Simulado"
-          className={`px-2.5 py-1.5 border rounded-2xl shadow-xl backdrop-blur-xl text-[9px] font-black flex items-center gap-1.5 transition-all ${
+          className={`px-2 py-1 sm:px-2.5 sm:py-1.5 border rounded-2xl shadow-xl backdrop-blur-xl text-[8px] sm:text-[9px] font-black flex items-center gap-1 transition-all ${
             useRealGps
               ? 'bg-emerald-600/95 text-white border-emerald-400'
               : 'bg-amber-500/95 text-slate-950 border-amber-400'
           }`}
         >
-          <span className={`w-2 h-2 rounded-full ${useRealGps ? 'bg-white animate-ping' : 'bg-slate-950'}`}></span>
-          {useRealGps ? 'GPS VIVO' : 'SIM'}
+          <span className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${useRealGps ? 'bg-white animate-ping' : 'bg-slate-950'}`}></span>
+          {useRealGps ? 'GPS' : 'SIM'}
         </button>
 
         {/* Control de Simulación (Play / Pause) */}
@@ -972,13 +1016,13 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
           <button
             onClick={() => setIsSimulating(!isSimulating)}
             title={isSimulating ? 'Pausar Simulación' : 'Iniciar Simulación'}
-            className={`w-11 h-11 border rounded-2xl shadow-2xl backdrop-blur-xl flex items-center justify-center transition-all ${
+            className={`w-9 h-9 sm:w-11 sm:h-11 border rounded-2xl shadow-2xl backdrop-blur-xl flex items-center justify-center transition-all ${
               isSimulating
                 ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold'
                 : 'bg-slate-900/95 hover:bg-slate-800 border-slate-700 text-slate-300'
             }`}
           >
-            {isSimulating ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+            {isSimulating ? <Pause className="w-4 h-4 sm:w-5 sm:h-5" /> : <Play className="w-4 h-4 sm:w-5 sm:h-5" />}
           </button>
         )}
 
@@ -986,27 +1030,27 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
         <button
           onClick={handleZoomIn}
           title="Acercar mapa (+)"
-          className="w-11 h-11 bg-slate-900/95 hover:bg-slate-800 border border-slate-700/80 rounded-2xl text-white shadow-xl backdrop-blur-xl flex items-center justify-center transition-all hover:scale-105 active:scale-95 text-base font-bold"
+          className="w-9 h-9 sm:w-11 sm:h-11 bg-slate-900/95 hover:bg-slate-800 border border-slate-700/80 rounded-2xl text-white shadow-xl backdrop-blur-xl flex items-center justify-center transition-all hover:scale-105 active:scale-95 text-base font-bold"
         >
-          <Plus className="w-4 h-4 text-slate-200" />
+          <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-200" />
         </button>
 
         {/* Zoom Out (-) */}
         <button
           onClick={handleZoomOut}
           title="Alejar mapa (-)"
-          className="w-11 h-11 bg-slate-900/95 hover:bg-slate-800 border border-slate-700/80 rounded-2xl text-white shadow-xl backdrop-blur-xl flex items-center justify-center transition-all hover:scale-105 active:scale-95 text-base font-bold"
+          className="w-9 h-9 sm:w-11 sm:h-11 bg-slate-900/95 hover:bg-slate-800 border border-slate-700/80 rounded-2xl text-white shadow-xl backdrop-blur-xl flex items-center justify-center transition-all hover:scale-105 active:scale-95 text-base font-bold"
         >
-          <Minus className="w-4 h-4 text-slate-200" />
+          <Minus className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-200" />
         </button>
 
         {/* Botón SOS de Carretera de Alta Visibilidad */}
         <button
           onClick={onOpenSos}
           title="Bóveda SOS de Asistencia Inmediata"
-          className="w-11 h-11 bg-rose-600 hover:bg-rose-500 border border-rose-400 rounded-2xl text-white shadow-2xl shadow-rose-900/60 backdrop-blur-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all animate-pulse"
+          className="w-9 h-9 sm:w-11 sm:h-11 bg-rose-600 hover:bg-rose-500 border border-rose-400 rounded-2xl text-white shadow-2xl shadow-rose-900/60 backdrop-blur-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all animate-pulse"
         >
-          <Phone className="w-5 h-5" />
+          <Phone className="w-4 h-4 sm:w-5 sm:h-5" />
         </button>
 
         {/* Botón Instalar PWA en Celular */}
@@ -1014,7 +1058,7 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
           <button
             onClick={handleInstallApp}
             title="Instalar App en Celular"
-            className="px-2.5 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-extrabold rounded-2xl shadow-2xl text-[9px] flex items-center gap-1 border border-emerald-400 animate-bounce"
+            className="px-2 py-1 sm:px-2.5 sm:py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-extrabold rounded-2xl shadow-2xl text-[8px] sm:text-[9px] flex items-center gap-1 border border-emerald-400 animate-bounce"
           >
             📲 App
           </button>
@@ -1023,9 +1067,9 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
 
       {/* Alerta Activa en Carretera */}
       {activeRoadAlert && (
-        <div className="absolute top-28 left-3 right-3 sm:left-5 sm:w-96 z-[1150] animate-fade-in pointer-events-auto">
+        <div className="absolute top-24 left-2 right-2 sm:left-5 sm:w-96 z-[1150] animate-fade-in pointer-events-auto">
           <div
-            className={`p-3.5 sm:p-4 rounded-2xl border backdrop-blur-xl shadow-2xl flex items-start gap-3 ${
+            className={`p-3 sm:p-4 rounded-2xl border backdrop-blur-xl shadow-2xl flex items-start gap-2.5 sm:gap-3 ${
               activeRoadAlert.category === 'gas_station'
                 ? 'bg-amber-950/95 border-amber-600/60 text-amber-100'
                 : activeRoadAlert.category === 'dead_zone'
@@ -1035,21 +1079,21 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
                 : 'bg-slate-900/95 border-slate-700 text-white'
             }`}
           >
-            <div className="p-2 bg-black/40 rounded-xl mt-0.5 shrink-0">
+            <div className="p-1.5 sm:p-2 bg-black/40 rounded-xl mt-0.5 shrink-0">
               {activeRoadAlert.category === 'gas_station' ? (
-                <Fuel className="w-5 h-5 text-amber-400" />
+                <Fuel className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
               ) : activeRoadAlert.category === 'dead_zone' ? (
-                <WifiOff className="w-5 h-5 text-rose-400" />
+                <WifiOff className="w-4 h-4 sm:w-5 sm:h-5 text-rose-400" />
               ) : activeRoadAlert.category === 'vulcanizadora' ? (
-                <Wrench className="w-5 h-5 text-purple-400" />
+                <Wrench className="w-4 h-4 sm:w-5 sm:h-5 text-purple-400" />
               ) : (
-                <AlertTriangle className="w-5 h-5 text-amber-400" />
+                <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
               )}
             </div>
 
             <div className="space-y-1 flex-1 text-xs">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-sm text-white">{activeRoadAlert.name}</span>
+                <span className="font-bold text-xs sm:text-sm text-white">{activeRoadAlert.name}</span>
                 <button
                   onClick={() => setActiveRoadAlert(null)}
                   className="text-slate-400 hover:text-white text-xs px-1"
@@ -1059,23 +1103,23 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
               </div>
 
               {activeRoadAlert.fuelAdvice && (
-                <p className="text-amber-200 font-semibold leading-relaxed">
+                <p className="text-amber-200 font-semibold leading-relaxed text-[11px] sm:text-xs">
                   👉 {activeRoadAlert.fuelAdvice.reason}
                 </p>
               )}
 
               {activeRoadAlert.deadZoneInfo && (
-                <p className="text-rose-200 font-semibold leading-relaxed">
+                <p className="text-rose-200 font-semibold leading-relaxed text-[11px] sm:text-xs">
                   📡 ¡Atención! Próximo tramo de {activeRoadAlert.deadZoneInfo.lengthKm} km sin cobertura telefónica.
                 </p>
               )}
 
               {activeRoadAlert.phone && (
                 <div className="pt-1 flex items-center justify-between">
-                  <span className="text-slate-300">Asistencia: {activeRoadAlert.phone}</span>
+                  <span className="text-slate-300 text-[10px] sm:text-xs">Asistencia: {activeRoadAlert.phone}</span>
                   <a
                     href={`tel:${activeRoadAlert.phone.replace(/\s+/g, '')}`}
-                    className="px-2 py-1 bg-white/20 hover:bg-white/30 rounded font-bold text-white flex items-center gap-1"
+                    className="px-2 py-0.5 sm:py-1 bg-white/20 hover:bg-white/30 rounded font-bold text-white flex items-center gap-1 text-[10px] sm:text-xs"
                   >
                     <Phone className="w-3 h-3" /> Llamar
                   </a>
@@ -1089,178 +1133,229 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
       {/* ======================================================== */}
       {/* 3. DOCK INFERIOR UNIFICADO: CAPAS, POIs, TELEMETRÍA & RUTA */}
       {/* ======================================================== */}
-      <div className="absolute bottom-2 sm:bottom-3 left-3 right-3 sm:left-5 sm:right-5 z-[1100] pointer-events-auto">
-        <div className="bg-slate-950/95 border border-slate-800/90 rounded-3xl p-2.5 sm:p-3.5 shadow-2xl backdrop-blur-2xl flex flex-col gap-2.5 max-w-7xl mx-auto">
-          
-          {/* Fila A: Selector de Modo de Mapa y Filtros POI */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-            {/* Segmented Control para Modo de Mapa */}
-            <div className="flex items-center gap-1 bg-slate-900/90 border border-slate-700/80 p-1 rounded-2xl shrink-0 shadow-lg">
-              <button
-                onClick={() => setMapStyle('streets')}
-                className={`px-2.5 sm:px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
-                  mapStyle === 'streets'
-                    ? 'bg-amber-500 text-slate-950 shadow-md'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <span>🗺️</span>
-                <span>Calles</span>
-              </button>
-              <button
-                onClick={() => setMapStyle('satellite')}
-                className={`px-2.5 sm:px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
-                  mapStyle === 'satellite'
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <span>🛰️</span>
-                <span>Satélite HD</span>
-              </button>
-              <button
-                onClick={() => setMapStyle('dark')}
-                className={`px-2.5 sm:px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
-                  mapStyle === 'dark'
-                    ? 'bg-purple-600 text-white shadow-md'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <span>🌙</span>
-                <span>Nocturno</span>
-              </button>
+      <div className="absolute bottom-2 sm:bottom-3 left-2 right-2 sm:left-5 sm:right-5 landscape:bottom-2 landscape:left-2 landscape:right-auto landscape:max-w-xl z-[1100] pointer-events-auto transition-all">
+        {/* Modo Minifiltro / Cápsula Compacta Automotriz (No obstruye la vista del camino) */}
+        {isHudMinimized ? (
+          <div className="bg-slate-950/95 border border-slate-700/80 rounded-2xl px-3 py-1.5 shadow-2xl backdrop-blur-2xl flex items-center gap-3 animate-fade-in">
+            {/* Velocidad */}
+            <div className="flex items-baseline gap-1">
+              <span className="text-2xl font-black text-white leading-none">{speedKmh}</span>
+              <span className="text-[10px] text-amber-400 font-bold">km/h</span>
             </div>
 
-            <span className="text-slate-700 font-bold hidden sm:inline">|</span>
+            <div className="h-4 w-px bg-slate-800"></div>
 
-            {/* Filtros POI Rápidos */}
-            <button
-              onClick={() => toggleLayer('gas_station')}
-              className={`px-2.5 sm:px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap border flex items-center gap-1.5 shadow-md transition-all shrink-0 ${
-                activeLayers.gas_station
-                  ? 'bg-amber-500 text-slate-950 border-amber-400'
-                  : 'bg-slate-900/90 text-slate-400 border-slate-700'
-              }`}
-            >
-              <Fuel className="w-3.5 h-3.5" />
-              <span>Gasolineras</span>
-            </button>
-
-            <button
-              onClick={() => toggleLayer('vulcanizadora')}
-              className={`px-2.5 sm:px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap border flex items-center gap-1.5 shadow-md transition-all shrink-0 ${
-                activeLayers.vulcanizadora
-                  ? 'bg-purple-600 text-white border-purple-400'
-                  : 'bg-slate-900/90 text-slate-400 border-slate-700'
-              }`}
-            >
-              <Wrench className="w-3.5 h-3.5" />
-              <span>Vulcanizadoras 24h</span>
-            </button>
-
-            <button
-              onClick={() => toggleLayer('dead_zone')}
-              className={`px-2.5 sm:px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap border flex items-center gap-1.5 shadow-md transition-all shrink-0 ${
-                activeLayers.dead_zone
-                  ? 'bg-rose-600 text-white border-rose-400'
-                  : 'bg-slate-900/90 text-slate-400 border-slate-700'
-              }`}
-            >
-              <WifiOff className="w-3.5 h-3.5" />
-              <span>Sin Señal (38 km)</span>
-            </button>
-
-            <button
-              onClick={() => toggleLayer('risk_zone')}
-              className={`px-2.5 sm:px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap border flex items-center gap-1.5 shadow-md transition-all shrink-0 ${
-                activeLayers.risk_zone
-                  ? 'bg-red-700 text-white border-red-500'
-                  : 'bg-slate-900/90 text-slate-400 border-slate-700'
-              }`}
-            >
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span>Tramos Peligrosos</span>
-            </button>
-          </div>
-
-          {/* Fila B: Velocímetro, Métricas de Viaje y Caché Offline */}
-          <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 pt-1 border-t border-slate-800/80">
-            {/* Velocímetro Digital */}
-            <div className="flex items-center gap-2.5 sm:gap-3">
-              <div className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-slate-900/95 rounded-2xl border border-slate-800 flex items-baseline gap-1 shadow-inner">
-                <span className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-none">{speedKmh}</span>
-                <span className="text-[10px] sm:text-xs font-bold text-amber-400">km/h</span>
-              </div>
-              <div>
-                <div className="text-[11px] sm:text-xs font-bold text-slate-200">
-                  {profile.make} {profile.model}
-                </div>
-                <div className="text-[10px] font-semibold flex items-center gap-1.5">
-                  {useRealGps && gpsStatus === 'active' ? (
-                    <span className="text-emerald-400 flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                      GPS Activo (±{Math.round(gpsAccuracy)}m)
-                    </span>
-                  ) : gpsStatus === 'requesting' ? (
-                    <span className="text-amber-400 flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-                      Buscando satélites...
-                    </span>
-                  ) : (
-                    <span className="text-amber-400 flex items-center gap-1">
-                      <MapPin className="w-3 h-3" />
-                      Modo Simulado
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Información OSRM de Ruta */}
-            <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-5 flex-1 sm:flex-initial">
-              <div className="text-left sm:text-right">
-                <div className="text-[9px] text-slate-400 uppercase font-semibold">Distancia</div>
-                <div className="text-sm sm:text-base font-black text-white">
-                  {osrmRoute ? `${osrmRoute.distanceKm} km` : destination ? 'Calculando...' : '-- km'}
-                </div>
-              </div>
-
-              <div className="text-center sm:text-right">
-                <div className="text-[9px] text-slate-400 uppercase font-semibold">Tiempo</div>
-                <div className="text-sm sm:text-base font-black text-amber-400">
-                  {osrmRoute ? `${Math.floor(osrmRoute.durationMinutes / 60)}h ${osrmRoute.durationMinutes % 60}m` : '--'}
-                </div>
-              </div>
-
-              <div className="text-right">
-                <div className="text-[9px] text-slate-400 uppercase font-semibold">Destino</div>
-                <div className="text-xs sm:text-sm font-black text-white truncate max-w-[100px] sm:max-w-[150px]">
-                  {destination ? destination.name : 'Sin fijar'}
-                </div>
-              </div>
-
-              {destination && (
-                <button
-                  onClick={handleClearRoute}
-                  title="Cancelar ruta"
-                  className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold border border-slate-700"
-                >
-                  ✕
-                </button>
+            {/* Datos Resumidos de Ruta */}
+            <div className="flex-1 truncate text-xs font-semibold text-slate-300">
+              {osrmRoute ? (
+                <span className="flex items-center gap-1.5 truncate">
+                  <strong className="text-white">{osrmRoute.distanceKm} km</strong>
+                  <span className="text-amber-400 font-bold">({Math.floor(osrmRoute.durationMinutes / 60)}h {osrmRoute.durationMinutes % 60}m)</span>
+                  <span className="truncate text-slate-400">• {destination?.name}</span>
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-slate-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  GPS en vivo • Carretera
+                </span>
               )}
             </div>
 
-            {/* Estado de Caché Offline del Corredor */}
-            <div className="hidden lg:flex items-center gap-2 px-2.5 py-1.5 bg-slate-900/80 rounded-2xl border border-slate-800 text-xs shrink-0">
-              <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></div>
-              <div>
-                <div className="font-bold text-white text-[11px]">Corredor OSRM 15 km</div>
-                <div className="text-[9px] text-slate-400">Caché offline activo</div>
+            {/* Botón para Expandir Panel */}
+            <button
+              onClick={() => setIsHudMinimized(false)}
+              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold rounded-xl text-[10px] flex items-center gap-1 border border-slate-700 shrink-0 transition-transform active:scale-95"
+            >
+              <span>Panel</span>
+              <ChevronUp className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          /* Panel Completo con Botón para Minimizar */
+          <div className="bg-slate-950/95 border border-slate-800/90 rounded-3xl p-2 sm:p-3 landscape:p-2.5 shadow-2xl backdrop-blur-2xl flex flex-col gap-2 max-w-7xl mx-auto transition-all">
+            
+            {/* Fila A: Selector de Modo de Mapa, Filtros POI y Botón Minimizar */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none flex-1">
+                {/* Segmented Control para Modo de Mapa */}
+                <div className="flex items-center gap-0.5 sm:gap-1 bg-slate-900/90 border border-slate-700/80 p-0.5 sm:p-1 rounded-xl shrink-0 shadow-lg">
+                  <button
+                    onClick={() => setMapStyle('streets')}
+                    className={`px-2 sm:px-3 py-0.5 sm:py-1 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition-all flex items-center gap-1 ${
+                      mapStyle === 'streets'
+                        ? 'bg-amber-500 text-slate-950 shadow-md'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>🗺️</span>
+                    <span>Calles</span>
+                  </button>
+                  <button
+                    onClick={() => setMapStyle('satellite')}
+                    className={`px-2 sm:px-3 py-0.5 sm:py-1 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition-all flex items-center gap-1 ${
+                      mapStyle === 'satellite'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>🛰️</span>
+                    <span>Satélite HD</span>
+                  </button>
+                  <button
+                    onClick={() => setMapStyle('dark')}
+                    className={`px-2 sm:px-3 py-0.5 sm:py-1 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition-all flex items-center gap-1 ${
+                      mapStyle === 'dark'
+                        ? 'bg-purple-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>🌙</span>
+                    <span>Nocturno</span>
+                  </button>
+                </div>
+
+                <span className="text-slate-700 font-bold hidden sm:inline">|</span>
+
+                {/* Filtros POI Rápidos */}
+                <button
+                  onClick={() => toggleLayer('gas_station')}
+                  className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-xl text-[10px] sm:text-xs font-bold whitespace-nowrap border flex items-center gap-1 shadow-md transition-all shrink-0 ${
+                    activeLayers.gas_station
+                      ? 'bg-amber-500 text-slate-950 border-amber-400'
+                      : 'bg-slate-900/90 text-slate-400 border-slate-700'
+                  }`}
+                >
+                  <Fuel className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  <span>Gasolineras</span>
+                </button>
+
+                <button
+                  onClick={() => toggleLayer('vulcanizadora')}
+                  className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-xl text-[10px] sm:text-xs font-bold whitespace-nowrap border flex items-center gap-1 shadow-md transition-all shrink-0 ${
+                    activeLayers.vulcanizadora
+                      ? 'bg-purple-600 text-white border-purple-400'
+                      : 'bg-slate-900/90 text-slate-400 border-slate-700'
+                  }`}
+                >
+                  <Wrench className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  <span>Vulcanizadoras</span>
+                </button>
+
+                <button
+                  onClick={() => toggleLayer('dead_zone')}
+                  className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-xl text-[10px] sm:text-xs font-bold whitespace-nowrap border flex items-center gap-1 shadow-md transition-all shrink-0 ${
+                    activeLayers.dead_zone
+                      ? 'bg-rose-600 text-white border-rose-400'
+                      : 'bg-slate-900/90 text-slate-400 border-slate-700'
+                  }`}
+                >
+                  <WifiOff className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  <span>Sin Señal</span>
+                </button>
+
+                <button
+                  onClick={() => toggleLayer('risk_zone')}
+                  className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-xl text-[10px] sm:text-xs font-bold whitespace-nowrap border flex items-center gap-1 shadow-md transition-all shrink-0 ${
+                    activeLayers.risk_zone
+                      ? 'bg-red-700 text-white border-red-500'
+                      : 'bg-slate-900/90 text-slate-400 border-slate-700'
+                  }`}
+                >
+                  <AlertTriangle className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  <span>Tramos Riesgo</span>
+                </button>
               </div>
+
+              {/* Botón para Minimizar y despejar la carretera */}
+              <button
+                onClick={() => setIsHudMinimized(true)}
+                title="Minimizar panel para ver carretera despejada"
+                className="p-1 sm:px-2 sm:py-1 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl text-[10px] font-bold border border-slate-800 flex items-center gap-1 shrink-0"
+              >
+                <span className="hidden sm:inline">Despejar</span>
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
             </div>
 
+            {/* Fila B: Velocímetro, Métricas de Viaje y Caché Offline */}
+            <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5 pt-1 border-t border-slate-800/80">
+              {/* Velocímetro Digital */}
+              <div className="flex items-center gap-2 sm:gap-2.5">
+                <div className="px-2 py-1 sm:px-2.5 sm:py-1.5 bg-slate-900/95 rounded-2xl border border-slate-800 flex items-baseline gap-1 shadow-inner">
+                  <span className="text-xl sm:text-2xl font-black text-white tracking-tight leading-none">{speedKmh}</span>
+                  <span className="text-[9px] sm:text-[10px] font-bold text-amber-400">km/h</span>
+                </div>
+                <div>
+                  <div className="text-[10px] sm:text-xs font-bold text-slate-200 truncate max-w-[120px]">
+                    {profile.make} {profile.model}
+                  </div>
+                  <div className="text-[9px] sm:text-[10px] font-semibold flex items-center gap-1">
+                    {useRealGps && gpsStatus === 'active' ? (
+                      <span className="text-emerald-400 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        GPS (±{Math.round(gpsAccuracy)}m)
+                      </span>
+                    ) : gpsStatus === 'requesting' ? (
+                      <span className="text-amber-400 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+                        Buscando satélites...
+                      </span>
+                    ) : (
+                      <span className="text-amber-400 flex items-center gap-1">
+                        <MapPin className="w-2.5 h-2.5" />
+                        Simulado
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Información OSRM de Ruta */}
+              <div className="flex items-center justify-between sm:justify-end gap-2.5 sm:gap-4 flex-1 sm:flex-initial">
+                <div className="text-left sm:text-right">
+                  <div className="text-[8px] sm:text-[9px] text-slate-400 uppercase font-semibold">Distancia</div>
+                  <div className="text-xs sm:text-sm font-black text-white">
+                    {osrmRoute ? `${osrmRoute.distanceKm} km` : destination ? 'Calculando...' : '-- km'}
+                  </div>
+                </div>
+
+                <div className="text-center sm:text-right">
+                  <div className="text-[8px] sm:text-[9px] text-slate-400 uppercase font-semibold">Tiempo</div>
+                  <div className="text-xs sm:text-sm font-black text-amber-400">
+                    {osrmRoute ? `${Math.floor(osrmRoute.durationMinutes / 60)}h ${osrmRoute.durationMinutes % 60}m` : '--'}
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <div className="text-[8px] sm:text-[9px] text-slate-400 uppercase font-semibold">Destino</div>
+                  <div className="text-[11px] sm:text-xs font-black text-white truncate max-w-[80px] sm:max-w-[130px]">
+                    {destination ? destination.name : 'Sin fijar'}
+                  </div>
+                </div>
+
+                {destination && (
+                  <button
+                    onClick={handleClearRoute}
+                    title="Cancelar ruta"
+                    className="px-1.5 py-0.5 sm:px-2 sm:py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-[10px] font-bold border border-slate-700"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Estado de Caché Offline del Corredor */}
+              <div className="hidden xl:flex items-center gap-1.5 px-2 py-1 bg-slate-900/80 rounded-xl border border-slate-800 text-[10px] shrink-0">
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></div>
+                <div>
+                  <div className="font-bold text-white text-[10px]">Corredor 15 km</div>
+                  <div className="text-[8px] text-slate-400 leading-none">Offline</div>
+                </div>
+              </div>
+
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Modal Asesor de Seguridad en Carretera */}
