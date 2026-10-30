@@ -402,8 +402,9 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
       DeepMindCopilotService.analyzeRoute(result, profile, speedKmh)
         .then((analysis) => {
           setDeepMindAnalysis(analysis);
-          if (analysis.hazardLevel === 'high' || analysis.hazardLevel === 'critical') {
-            DeepMindCopilotService.speak(`Atención: DeepMind detecta ${analysis.title}`);
+          // Alertar por voz únicamente si se detecta un riesgo real en la ruta analizada
+          if (!isVoiceMuted && (analysis.hazardLevel === 'high' || analysis.hazardLevel === 'critical')) {
+            DeepMindCopilotService.speak(`Alerta de riesgo en la ruta: ${analysis.title}. ${analysis.summary}`);
           }
         })
         .catch((e) => console.warn('DeepMind analysis error:', e))
@@ -457,11 +458,30 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
     setVoiceBannerMessage(`🎤 "${match.rawTranscript}"`);
     setTimeout(() => setVoiceBannerMessage(null), 5000);
 
-    if (match.action === 'cancel_route') {
+    if (match.action === 'route_status') {
+      // Monitoreo en vivo de ruta solicitado por el conductor
+      if (!isVoiceMuted) {
+        if (destination && osrmRoute) {
+          const hours = Math.floor(osrmRoute.durationMinutes / 60);
+          const mins = osrmRoute.durationMinutes % 60;
+          const timeStr = hours > 0 ? `${hours} horas y ${mins} minutos` : `${mins} minutos`;
+          let statusText = `Monitoreo en vivo: Te diriges a ${destination.name}. Distancia aproximada: ${osrmRoute.distanceKm} kilómetros, tiempo estimado: ${timeStr}. Velocidad actual: ${speedKmh} kilómetros por hora.`;
+          if (deepMindAnalysis) {
+            if (deepMindAnalysis.hazardLevel === 'high' || deepMindAnalysis.hazardLevel === 'critical') {
+              statusText += ` Atención: ${deepMindAnalysis.title}. ${deepMindAnalysis.summary}`;
+            } else {
+              statusText += ` Condiciones de ruta favorables con calificación de seguridad del ${deepMindAnalysis.safetyScore} por ciento.`;
+            }
+          }
+          DeepMindCopilotService.speak(statusText);
+        } else {
+          DeepMindCopilotService.speak('No hay ninguna ruta activa. Indica un destino por voz o en el buscador para iniciar el monitoreo en vivo.');
+        }
+      }
+    } else if (match.action === 'cancel_route') {
       handleClearRoute();
     } else if (match.action === 'recenter') {
       handleRecenter();
-      if (!isVoiceMuted) DeepMindCopilotService.speak('Ubicación recentrada.');
     } else if (match.action === 'find_poi' && match.param) {
       // Activar la capa correspondiente y filtrar
       const category = match.param as PoiCategory;
@@ -478,20 +498,20 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
       }
     } else if (match.action === 'search_destination' && match.param) {
       setSearchQuery(match.param);
-      if (!isVoiceMuted) {
-        DeepMindCopilotService.speak(`Buscando ${match.param}...`);
-      }
       GeocodingService.searchPlaces(match.param).then((places) => {
         if (places && places.length > 0) {
           const top = places[0];
           calculateRouteToDestination(top.lat, top.lng, top.name);
         } else {
-          if (!isVoiceMuted) DeepMindCopilotService.speak(`No se encontró el destino ${match.param}. Intenta con otra referencia.`);
+          if (!isVoiceMuted) DeepMindCopilotService.speak(`No se encontró el destino ${match.param}.`);
         }
       });
     } else if (match.action === 'ask_gemini' && match.param) {
       if (!isVoiceMuted) {
-        DeepMindCopilotService.queryAssistant(match.param).then((answer) => {
+        const routeContext = destination && osrmRoute
+          ? `Ruta activa hacia ${destination.name}, distancia ${osrmRoute.distanceKm} km, velocidad ${speedKmh} km/h.`
+          : `Sin ruta fijada, velocidad ${speedKmh} km/h.`;
+        DeepMindCopilotService.queryAssistant(match.param, routeContext).then((answer) => {
           DeepMindCopilotService.speak(answer);
         });
       }
@@ -502,7 +522,7 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
     if (isVoiceListening) {
       VoiceNavigationService.stopListening();
       setIsVoiceListening(false);
-      if (!isVoiceMuted) DeepMindCopilotService.speak('Comandos de voz desactivados.');
+      // Silencio: no habla al desactivar
     } else {
       const started = VoiceNavigationService.startListening(
         handleVoiceCommand,
@@ -516,9 +536,7 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
       );
       if (started) {
         setIsVoiceListening(true);
-        if (!isVoiceMuted) {
-          DeepMindCopilotService.speak('Modo manos libres activado. Di por ejemplo: Llévame a Querétaro, Buscar gasolinera, o Dónde estoy.');
-        }
+        // Silencio: no hablar al activar el micrófono; permanece en escucha atenta
       } else {
         alert('El reconocimiento de voz no está disponible en este navegador o requiere permisos de micrófono.');
       }
@@ -989,8 +1007,9 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
   }, [isSimulating, useRealGps, routeCoords.length]);
 
   // VOZ ACTIVA: INDICACIONES PASO A PASO (TIPO GOOGLE MAPS / WAZE)
+  // Solo habla cuando existe una ruta activa definida (por voz o escrita)
   useEffect(() => {
-    if (isVoiceMuted || !osrmRoute || !osrmRoute.steps || osrmRoute.steps.length === 0) return;
+    if (isVoiceMuted || !destination || !osrmRoute || !osrmRoute.steps || osrmRoute.steps.length === 0) return;
 
     const step = osrmRoute.steps[0];
     const key = `${step.instruction}_${step.roadName}`;
@@ -1004,17 +1023,18 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
       const speech = `${distStr}, ${step.instruction} en ${step.roadName || 'la carretera'}.`;
       DeepMindCopilotService.speak(speech);
     }
-  }, [osrmRoute, isVoiceMuted]);
+  }, [destination, osrmRoute, isVoiceMuted]);
 
-  // VOZ ACTIVA: ALERTAS DE RIESGO PREVENTIVAS CON GEMINI AI
+  // VOZ ACTIVA: ALERTAS DE RIESGO PREVENTIVAS EN RUTA CON GEMINI AI
+  // Solo se evalúan cuando hay una ruta activa trazada y se detecta un riesgo real
   useEffect(() => {
-    if (isVoiceMuted) return;
+    if (isVoiceMuted || !destination || !osrmRoute) return;
 
     const now = Date.now();
-    const COOLDOWN_MS = 90000; // Evitar repetir alertas en menos de 90 segundos
+    const COOLDOWN_MS = 180000; // Cooldown de 3 minutos para evitar repeticiones innecesarias
 
-    // 1. Alerta de exceso de velocidad
-    if (speedKmh > 115) {
+    // 1. Alerta de exceso de velocidad peligrosa en carretera
+    if (speedKmh > 120) {
       const last = lastAlertTimesRef.current['speed'] || 0;
       if (now - last > COOLDOWN_MS) {
         lastAlertTimesRef.current['speed'] = now;
@@ -1026,8 +1046,8 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
       }
     }
 
-    // 2. Alerta de combustible bajo
-    if (profile.currentFuelLiters <= profile.tankCapacityLiters * 0.15) {
+    // 2. Alerta de combustible crítico en ruta
+    if (profile.currentFuelLiters <= profile.tankCapacityLiters * 0.12) {
       const last = lastAlertTimesRef.current['fuel'] || 0;
       if (now - last > COOLDOWN_MS * 2) {
         lastAlertTimesRef.current['fuel'] = now;
@@ -1037,9 +1057,9 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
       }
     }
 
-    // 3. Alerta de horario nocturno
+    // 3. Alerta de horario nocturno en autopista
     const hour = new Date().getHours();
-    if ((hour >= 21 || hour < 5) && speedKmh > 30) {
+    if ((hour >= 21 || hour < 5) && speedKmh > 50) {
       const last = lastAlertTimesRef.current['night'] || 0;
       if (now - last > COOLDOWN_MS * 3) {
         lastAlertTimesRef.current['night'] = now;
@@ -1048,7 +1068,7 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
         }).then((text) => DeepMindCopilotService.speak(text));
       }
     }
-  }, [speedKmh, profile.currentFuelLiters, isVoiceMuted]);
+  }, [destination, osrmRoute, speedKmh, profile.currentFuelLiters, isVoiceMuted]);
 
   const toggleLayer = (layer: PoiCategory) => {
     setActiveLayers((prev) => ({
@@ -1149,9 +1169,7 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
                 onClick={() => {
                   const nextMuted = !isVoiceMuted;
                   setIsVoiceMuted(nextMuted);
-                  if (!nextMuted) {
-                    DeepMindCopilotService.speak('Voz del copiloto activada.');
-                  } else {
+                  if (nextMuted) {
                     window.speechSynthesis?.cancel();
                   }
                 }}

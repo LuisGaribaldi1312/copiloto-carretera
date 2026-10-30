@@ -4,7 +4,7 @@
  */
 
 export interface VoiceCommandMatch {
-  action: 'search_destination' | 'cancel_route' | 'recenter' | 'find_poi' | 'ask_gemini' | 'toggle_sound';
+  action: 'search_destination' | 'cancel_route' | 'recenter' | 'find_poi' | 'ask_gemini' | 'route_status' | 'toggle_sound';
   param?: string;
   rawTranscript: string;
 }
@@ -105,13 +105,41 @@ export class VoiceNavigationService {
 
   /**
    * Analiza la frase hablada por el conductor y extrae el comando de navegación (estilo Waze / Google Maps).
+   * Filtra ruidos de fondo y habla exclusivamente cuando hay comandos explícitos o preguntas.
    */
   public static processVoiceCommand(text: string) {
     if (!this.onCommandCallback || !text.trim()) return;
 
-    const lower = text.toLowerCase();
+    const lower = text.toLowerCase().trim();
 
-    // 1. Cancelar ruta / detener navegación
+    // Filtro de ruido ambiental o frases insignificantes
+    if (lower.length < 3) return;
+
+    // 1. Monitoreo en vivo de ruta (Solicitado explícitamente por el conductor)
+    const statusTriggers = [
+      'monitoreo en vivo',
+      'monitoreo de ruta',
+      'monitorear ruta',
+      'monitoreo',
+      'cómo va la ruta',
+      'como va la ruta',
+      'estado de la ruta',
+      'estado de ruta',
+      'reporte de ruta',
+      'reporte de viaje',
+      'estado del viaje',
+      'cuánto falta',
+      'cuanto falta',
+      'cuánto tiempo falta',
+      'cuanto tiempo falta',
+      'distancia restante',
+    ];
+    if (statusTriggers.some((t) => lower.includes(t))) {
+      this.onCommandCallback({ action: 'route_status', rawTranscript: text });
+      return;
+    }
+
+    // 2. Cancelar ruta / detener navegación
     if (
       lower.includes('cancelar ruta') ||
       lower.includes('detener ruta') ||
@@ -124,11 +152,13 @@ export class VoiceNavigationService {
       return;
     }
 
-    // 2. Recentrar en GPS
+    // 3. Recentrar en GPS
     if (
       lower.includes('recentrar') ||
       lower.includes('dónde estoy') ||
+      lower.includes('donde estoy') ||
       lower.includes('mi ubicación') ||
+      lower.includes('mi ubicacion') ||
       lower.includes('centrar mapa') ||
       lower.includes('centrar')
     ) {
@@ -136,7 +166,7 @@ export class VoiceNavigationService {
       return;
     }
 
-    // 3. Buscar POIs específicos (Gasolineras, Vulcanizadoras, Policía, Guardia Nacional, Casetas)
+    // 4. Buscar POIs específicos (Gasolineras, Vulcanizadoras, Policía, Guardia Nacional, Casetas)
     if (lower.includes('gasolinera') || lower.includes('gas') || lower.includes('pemex') || lower.includes('combustible')) {
       this.onCommandCallback({ action: 'find_poi', param: 'gas_station', rawTranscript: text });
       return;
@@ -158,7 +188,7 @@ export class VoiceNavigationService {
       return;
     }
 
-    // 4. Ir a un destino / Llevarme a (Estilo Google Maps / Waze)
+    // 5. Ir a un destino / Llevarme a (Estilo Google Maps / Waze)
     const navTriggers = [
       'ir a ',
       'llévame a ',
@@ -182,7 +212,40 @@ export class VoiceNavigationService {
       }
     }
 
-    // 5. Preguntas abiertas a Gemini AI (Seguridad, Horarios, Carretera)
-    this.onCommandCallback({ action: 'ask_gemini', param: text, rawTranscript: text });
+    // 6. Preguntas explícitas dirigidas al copiloto / Gemini
+    // Solo responde si es claramente una pregunta o consulta al copiloto; NO por ruidos ambientales ni palabras sueltas
+    const questionStarters = [
+      'oye copiloto',
+      'copiloto',
+      'gemini',
+      '¿',
+      'cómo ',
+      'como ',
+      'cuál ',
+      'cual ',
+      'qué ',
+      'que ',
+      'dónde ',
+      'donde ',
+      'cuándo ',
+      'cuando ',
+      'por qué ',
+      'porque ',
+      'hay ',
+      'explica',
+      'dime ',
+      'pregunta',
+      'recomienda',
+      'consejo',
+    ];
+
+    const isExplicitQuestion = questionStarters.some((starter) => lower.startsWith(starter) || lower.includes(starter));
+
+    if (isExplicitQuestion && lower.length > 5) {
+      this.onCommandCallback({ action: 'ask_gemini', param: text, rawTranscript: text });
+      return;
+    }
+
+    // Si no es un comando reconocido ni una pregunta clara, se mantiene en silencio total
   }
 }
