@@ -5,11 +5,13 @@
 export interface NearbyBusiness {
   id: string;
   name: string;
-  category: 'fuel' | 'mechanic' | 'food' | 'store' | 'pharmacy' | 'other';
+  category: 'fuel' | 'mechanic' | 'food' | 'store' | 'pharmacy' | 'police' | 'military' | 'toll' | 'other';
   lat: number;
   lng: number;
   address: string;
   distanceMeters?: number;
+  subType?: 'guardia_nacional' | 'ejercito_mexicano' | 'policia_estatal' | 'policia_municipal' | 'caseta_peaje';
+  phone?: string;
 }
 
 export class NearbyPlacesService {
@@ -58,17 +60,49 @@ export class NearbyPlacesService {
         const dist = this.calculateDistance(userLat, userLng, lat, lng);
 
         let category: NearbyBusiness['category'] = 'other';
-        const qLow = query.toLowerCase();
-        if (qLow.includes('gas') || qLow.includes('pemex') || qLow.includes('combust')) category = 'fuel';
-        else if (qLow.includes('taller') || qLow.includes('vulca') || qLow.includes('llant')) category = 'mechanic';
-        else if (qLow.includes('oxxo') || qLow.includes('tienda')) category = 'store';
-        else if (qLow.includes('restauran') || qLow.includes('taco') || qLow.includes('comid')) category = 'food';
-        else if (qLow.includes('farma')) category = 'pharmacy';
+        let subType: NearbyBusiness['subType'] = undefined;
+        let phone: string | undefined = undefined;
+
+        const qLow = query.toLowerCase() + ' ' + (name.toLowerCase()) + ' ' + (item.display_name.toLowerCase());
+        
+        if (qLow.includes('guardia nacional')) {
+          category = 'police';
+          subType = 'guardia_nacional';
+          phone = '088';
+        } else if (qLow.includes('ejercito') || qLow.includes('militar') || qLow.includes('sedena') || qLow.includes('cuartel') || qLow.includes('guarnicion')) {
+          category = 'military';
+          subType = 'ejercito_mexicano';
+          phone = '911';
+        } else if (qLow.includes('caseta') || qLow.includes('peaje') || qLow.includes('capufe') || qLow.includes('toll')) {
+          category = 'toll';
+          subType = 'caseta_peaje';
+          phone = '074';
+        } else if (qLow.includes('policia estatal') || qLow.includes('fuerza civil') || qLow.includes('seguridad publica del estado')) {
+          category = 'police';
+          subType = 'policia_estatal';
+          phone = '911';
+        } else if (qLow.includes('policia') || qLow.includes('comisaria') || qLow.includes('seguridad publica') || qLow.includes('comandancia')) {
+          category = 'police';
+          subType = 'policia_municipal';
+          phone = '911';
+        } else if (qLow.includes('gas') || qLow.includes('pemex') || qLow.includes('combust')) {
+          category = 'fuel';
+        } else if (qLow.includes('taller') || qLow.includes('vulca') || qLow.includes('llant')) {
+          category = 'mechanic';
+        } else if (qLow.includes('oxxo') || qLow.includes('tienda')) {
+          category = 'store';
+        } else if (qLow.includes('restauran') || qLow.includes('taco') || qLow.includes('comid')) {
+          category = 'food';
+        } else if (qLow.includes('farma')) {
+          category = 'pharmacy';
+        }
 
         return {
           id: item.place_id?.toString() || Math.random().toString(),
           name,
           category,
+          subType,
+          phone,
           lat,
           lng,
           address: item.display_name,
@@ -82,17 +116,25 @@ export class NearbyPlacesService {
   }
 
   /**
-   * Carga los negocios esenciales de la zona (gasolineras, vulcanizadoras, tiendas y comida).
+   * Carga los negocios esenciales y puntos de seguridad de la zona (Policía, Guardia Nacional, Ejército, Casetas, etc.).
    */
   public static async loadEssentialZoneBusinesses(userLat: number, userLng: number): Promise<NearbyBusiness[]> {
-    const queries = ['gasolinera', 'taller mecanico', 'oxxo', 'restaurante'];
+    const queries = [
+      'guardia nacional',
+      'policia',
+      'ejercito cuartel',
+      'caseta de cobro',
+      'gasolinera',
+      'taller mecanico',
+      'oxxo'
+    ];
     const allResults: NearbyBusiness[] = [];
 
     for (const q of queries) {
-      const results = await this.searchNearbyQuery(userLat, userLng, q, 5);
+      const results = await this.searchNearbyQuery(userLat, userLng, q, 8);
       allResults.push(...results);
       // Breve pausa para respetar rate limit de Nominatim
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 180));
     }
 
     // Deduplicar por ID

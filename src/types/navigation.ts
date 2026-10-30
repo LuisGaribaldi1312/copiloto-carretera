@@ -4,7 +4,17 @@ export type PoiCategory =
   | 'rest_stop' 
   | 'dead_zone' 
   | 'risk_zone' 
-  | 'mechanic';
+  | 'mechanic'
+  | 'police_station'
+  | 'military_checkpoint'
+  | 'toll_booth';
+
+export type SecurityForceType = 
+  | 'guardia_nacional'
+  | 'ejercito_mexicano'
+  | 'policia_estatal'
+  | 'policia_municipal'
+  | 'caseta_peaje';
 
 export interface PoiItem {
   id: string;
@@ -16,6 +26,7 @@ export interface PoiItem {
   description: string;
   isOpen24h?: boolean;
   phone?: string;
+  securityType?: SecurityForceType;
   fuelAdvice?: {
     isRecommended: boolean;
     reason: string;

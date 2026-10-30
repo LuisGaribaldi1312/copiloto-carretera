@@ -31,6 +31,9 @@ import {
   Minus,
   ChevronDown,
   ChevronUp,
+  PoliceBadge,
+  MilitaryStar,
+  TollBoothIcon,
 } from '../common/Icons';
 
 // Configurar iconos por defecto de Leaflet para evitar 404
@@ -72,6 +75,8 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
   const [gpsStatus, setGpsStatus] = useState<'requesting' | 'active' | 'denied'>('requesting');
   const [gpsAccuracy, setGpsAccuracy] = useState<number>(10);
   const [userPos, setUserPos] = useState<[number, number] | null>(null);
+  const [realHeading, setRealHeading] = useState<number | null>(null);
+  const lastUserPosRef = useRef<[number, number] | null>(null);
 
   // NEGOCIOS Y PUNTOS EN LA ZONA EN VIVO
   const [nearbyBusinesses, setNearbyBusinesses] = useState<NearbyBusiness[]>([]);
@@ -105,7 +110,7 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallable, setIsInstallable] = useState<boolean>(false);
 
-  // Capas activas
+  // Capas activas (Servicios y Cuerpos de Seguridad Federal, Estatal, Municipal y Militar)
   const [activeLayers, setActiveLayers] = useState<Record<PoiCategory, boolean>>({
     gas_station: true,
     vulcanizadora: true,
@@ -113,6 +118,9 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
     risk_zone: true,
     mechanic: true,
     rest_stop: true,
+    police_station: true,
+    military_checkpoint: true,
+    toll_booth: true,
   });
 
   const [activeRoadAlert, setActiveRoadAlert] = useState<PoiItem | null>(null);
@@ -211,6 +219,7 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
         const lng = pos.coords.longitude;
         const acc = pos.coords.accuracy || 10;
         setUserPos([lat, lng]);
+        lastUserPosRef.current = [lat, lng];
         setGpsAccuracy(acc);
         setGpsStatus('active');
 
@@ -234,13 +243,30 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
       }
     );
 
-    // Seguimiento continuo satelital
+    // Seguimiento continuo satelital con detección de orientación / heading
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         const acc = pos.coords.accuracy || 10;
         const spd = pos.coords.speed != null ? Math.round(pos.coords.speed * 3.6) : 0;
+        const head = pos.coords.heading;
+
+        // Si el sensor del dispositivo reporta heading directo (>0)
+        if (head != null && !isNaN(head) && head >= 0) {
+          setRealHeading(Math.round(head));
+        } else if (lastUserPosRef.current) {
+          // Si no tiene brújula pero se está moviendo, calcular vector direccional
+          const [prevLat, prevLng] = lastUserPosRef.current;
+          const distMoved = NearbyPlacesService.calculateDistance(prevLat, prevLng, lat, lng);
+          if (distMoved >= 3) { // Se movió al menos 3 metros
+            const calculated = calculateBearing(prevLat, prevLng, lat, lng);
+            setRealHeading(Math.round(calculated));
+            lastUserPosRef.current = [lat, lng];
+          }
+        } else {
+          lastUserPosRef.current = [lat, lng];
+        }
 
         setUserPos([lat, lng]);
         setGpsAccuracy(acc);
@@ -257,7 +283,28 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
       }
     );
 
-    return () => navigator.geolocation.clearWatch(watchId);
+    // Escuchar también el sensor de orientación / giroscopio del celular si está disponible
+    const handleDeviceOrientation = (event: DeviceOrientationEvent) => {
+      // event.webkitCompassHeading para iOS Safari, event.alpha para Android
+      const compass = (event as any).webkitCompassHeading != null 
+        ? (event as any).webkitCompassHeading 
+        : event.alpha != null 
+        ? (360 - event.alpha) % 360 
+        : null;
+
+      if (compass != null && !isNaN(compass) && useRealGps) {
+        setRealHeading(Math.round(compass));
+      }
+    };
+
+    if (window.DeviceOrientationEvent && typeof (window as any).DeviceOrientationEvent.requestPermission !== 'function') {
+      window.addEventListener('deviceorientation', handleDeviceOrientation, true);
+    }
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+      window.removeEventListener('deviceorientation', handleDeviceOrientation, true);
+    };
   }, [useRealGps]);
 
   // Cargar negocios esenciales de la zona
@@ -405,7 +452,14 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
     return (toDeg(Math.atan2(y, x)) + 360) % 360;
   };
 
-  const bearing = calculateBearing(currentPos[0], currentPos[1], nextPos[0], nextPos[1]);
+  // Rumbo de la flecha de guía GPS:
+  // 1. Si está en modo GPS real y el sensor o movimiento da rumbo -> se usa realHeading
+  // 2. Si hay ruta activa trazada -> se orienta hacia el siguiente punto de la ruta
+  // 3. Si no hay ruta ni movimiento, conserva el último rumbo calculado
+  const routeBearing = calculateBearing(currentPos[0], currentPos[1], nextPos[0], nextPos[1]);
+  const activeHeading = useRealGps && realHeading != null 
+    ? realHeading 
+    : (routeCoords.length > 0 ? routeBearing : (realHeading || 0));
 
   // Proveedores de mosaicos de alta disponibilidad y contraste automotriz
   const getTileLayerConfig = (style: 'streets' | 'satellite' | 'dark') => {
@@ -486,13 +540,13 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
     poiLayerGroupRef.current = L.layerGroup().addTo(map);
     businessesLayerRef.current = L.layerGroup().addTo(map);
 
-    // Marcador del vehículo
+    // Marcador de la flecha de guía GPS del vehículo (orientada a la dirección de marcha)
     const carHtml = `
-      <div style="transform: rotate(${bearing}deg); transition: transform 0.4s ease;" class="relative flex items-center justify-center">
-        <div class="absolute w-12 h-12 bg-amber-500/20 rounded-full animate-ping"></div>
-        <div class="w-9 h-9 bg-slate-950 border-2 border-amber-400 rounded-full flex items-center justify-center shadow-2xl shadow-amber-500/50">
-          <svg class="w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="currentColor">
-            <polygon points="12 2 19 21 12 17 5 21 12 2"/>
+      <div style="transform: rotate(${activeHeading}deg); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);" class="relative flex items-center justify-center">
+        <div class="absolute w-14 h-14 bg-amber-500/25 rounded-full animate-ping"></div>
+        <div class="w-10 h-10 bg-slate-950/90 border-2 border-amber-400 rounded-full flex items-center justify-center shadow-2xl shadow-amber-500/60 backdrop-blur-sm">
+          <svg class="w-6 h-6 text-amber-400 filter drop-shadow-[0_0_6px_rgba(245,158,11,0.8)]" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="12 2 20 21 12 17 4 21 12 2"/>
           </svg>
         </div>
       </div>
@@ -605,7 +659,24 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
       let iconColor = 'bg-slate-800 border-slate-600 text-white';
       let iconEmoji = '📍';
 
-      if (biz.category === 'fuel') {
+      if (biz.category === 'police') {
+        if (biz.subType === 'guardia_nacional') {
+          iconColor = 'bg-slate-900 border-yellow-400 text-yellow-300 ring-2 ring-yellow-400/50';
+          iconEmoji = '🛡️';
+        } else if (biz.subType === 'policia_estatal') {
+          iconColor = 'bg-blue-700 border-blue-300 text-white';
+          iconEmoji = '👮';
+        } else {
+          iconColor = 'bg-cyan-700 border-cyan-300 text-white';
+          iconEmoji = '🚓';
+        }
+      } else if (biz.category === 'military') {
+        iconColor = 'bg-emerald-800 border-emerald-400 text-amber-300 ring-2 ring-emerald-500/50';
+        iconEmoji = '🎖️';
+      } else if (biz.category === 'toll') {
+        iconColor = 'bg-indigo-700 border-indigo-300 text-white';
+        iconEmoji = '🛑';
+      } else if (biz.category === 'fuel') {
         iconColor = 'bg-amber-500 border-amber-300 text-slate-950';
         iconEmoji = '⛽';
       } else if (biz.category === 'mechanic') {
@@ -647,6 +718,14 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
           <div class="text-amber-400 font-semibold text-[11px]">
             Aprox. a ${biz.distanceMeters ? `${biz.distanceMeters} metros` : 'tu zona'}
           </div>
+          ${biz.phone ? `
+            <div class="pt-1 flex items-center justify-between border-t border-slate-700/80">
+              <span class="text-slate-300 text-[11px]">Línea Directa: <strong>${biz.phone}</strong></span>
+              <a href="tel:${biz.phone}" class="px-2 py-0.5 bg-rose-600 hover:bg-rose-500 rounded text-white font-bold text-[10px]">
+                📞 Llamar
+              </a>
+            </div>
+          ` : ''}
           <button
             onclick="window.dispatchEvent(new CustomEvent('route_to_business', { detail: { lat: ${biz.lat}, lng: ${biz.lng}, name: '${biz.name.replace(/'/g, "\\'")}' } }))"
             class="w-full mt-2 py-1.5 px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs transition-all text-center block"
@@ -683,11 +762,11 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
     }
 
     const carHtml = `
-      <div style="transform: rotate(${bearing}deg); transition: transform 0.4s ease;" class="relative flex items-center justify-center">
-        <div class="absolute w-12 h-12 bg-amber-500/20 rounded-full animate-ping"></div>
-        <div class="w-9 h-9 bg-slate-950 border-2 border-amber-400 rounded-full flex items-center justify-center shadow-2xl shadow-amber-500/50">
-          <svg class="w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="currentColor">
-            <polygon points="12 2 19 21 12 17 5 21 12 2"/>
+      <div style="transform: rotate(${activeHeading}deg); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);" class="relative flex items-center justify-center">
+        <div class="absolute w-14 h-14 bg-amber-500/25 rounded-full animate-ping"></div>
+        <div class="w-10 h-10 bg-slate-950/90 border-2 border-amber-400 rounded-full flex items-center justify-center shadow-2xl shadow-amber-500/60 backdrop-blur-sm">
+          <svg class="w-6 h-6 text-amber-400 filter drop-shadow-[0_0_6px_rgba(245,158,11,0.8)]" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="12 2 20 21 12 17 4 21 12 2"/>
           </svg>
         </div>
       </div>
@@ -705,7 +784,7 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
     if (isFollowing) {
       mapInstanceRef.current.panTo(currentPos, { animate: true, duration: 0.8 });
     }
-  }, [currentPos, bearing, isFollowing, gpsAccuracy]);
+  }, [currentPos, activeHeading, isFollowing, gpsAccuracy]);
 
   // Actualizar POIs de autopista
   useEffect(() => {
@@ -719,7 +798,24 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
       let iconColor = 'bg-blue-600 border-blue-400 text-white';
       let iconSvg = '📍';
 
-      if (poi.category === 'gas_station') {
+      if (poi.category === 'police_station') {
+        if (poi.securityType === 'guardia_nacional') {
+          iconColor = 'bg-slate-900 border-yellow-400 text-yellow-300 ring-2 ring-yellow-400/60 shadow-yellow-500/50';
+          iconSvg = '🛡️';
+        } else if (poi.securityType === 'policia_estatal') {
+          iconColor = 'bg-blue-700 border-blue-300 text-white shadow-blue-500/50';
+          iconSvg = '👮';
+        } else {
+          iconColor = 'bg-cyan-700 border-cyan-300 text-white shadow-cyan-500/50';
+          iconSvg = '🚓';
+        }
+      } else if (poi.category === 'military_checkpoint') {
+        iconColor = 'bg-emerald-800 border-emerald-400 text-amber-300 ring-2 ring-emerald-400/60 shadow-emerald-600/50';
+        iconSvg = '🎖️';
+      } else if (poi.category === 'toll_booth') {
+        iconColor = 'bg-indigo-700 border-indigo-300 text-white shadow-indigo-500/50';
+        iconSvg = '🛑';
+      } else if (poi.category === 'gas_station') {
         iconColor = poi.fuelAdvice?.isRecommended
           ? 'bg-amber-500 border-amber-300 text-slate-950 animate-bounce'
           : 'bg-emerald-600 border-emerald-400 text-white';
@@ -759,7 +855,20 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
           <p class="text-slate-300 leading-relaxed">${poi.description}</p>
           ${poi.fuelAdvice ? `<div class="p-2 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 font-semibold mt-1">⛽ ${poi.fuelAdvice.reason}</div>` : ''}
           ${poi.deadZoneInfo ? `<div class="p-2 rounded bg-red-950/40 border border-red-800 text-red-300 font-semibold mt-1">📶 Tramo sin señal: ${poi.deadZoneInfo.lengthKm} km continuos.</div>` : ''}
-          ${poi.phone ? `<div class="pt-1 text-slate-400">Tel directo: <strong class="text-white">${poi.phone}</strong></div>` : ''}
+          ${poi.phone ? `
+            <div class="pt-1 flex items-center justify-between border-t border-slate-700/80">
+              <span class="text-slate-300 text-[11px]">Teléfono de Auxilio: <strong class="text-white">${poi.phone}</strong></span>
+              <a href="tel:${poi.phone.replace(/\s+/g, '')}" class="px-2 py-0.5 bg-rose-600 hover:bg-rose-500 rounded text-white font-bold text-[10px]">
+                📞 Contactar
+              </a>
+            </div>
+          ` : ''}
+          <button
+            onclick="window.dispatchEvent(new CustomEvent('route_to_business', { detail: { lat: ${poi.lat}, lng: ${poi.lng}, name: '${poi.name.replace(/'/g, "\\'")}' } }))"
+            class="w-full mt-2 py-1.5 px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs transition-all text-center block"
+          >
+            🧭 Trazar ruta hacia este punto
+          </button>
         </div>
       `);
 
@@ -1216,7 +1325,43 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
 
                 <span className="text-slate-700 font-bold hidden sm:inline">|</span>
 
-                {/* Filtros POI Rápidos */}
+                {/* Filtros POI Rápidos y Fuerzas de Seguridad */}
+                <button
+                  onClick={() => toggleLayer('police_station')}
+                  className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-xl text-[10px] sm:text-xs font-bold whitespace-nowrap border flex items-center gap-1 shadow-md transition-all shrink-0 ${
+                    activeLayers.police_station
+                      ? 'bg-blue-600 text-white border-blue-400'
+                      : 'bg-slate-900/90 text-slate-400 border-slate-700'
+                  }`}
+                >
+                  <PoliceBadge className="w-3.5 h-3.5 text-yellow-300" />
+                  <span>Policía & GN</span>
+                </button>
+
+                <button
+                  onClick={() => toggleLayer('military_checkpoint')}
+                  className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-xl text-[10px] sm:text-xs font-bold whitespace-nowrap border flex items-center gap-1 shadow-md transition-all shrink-0 ${
+                    activeLayers.military_checkpoint
+                      ? 'bg-emerald-700 text-amber-200 border-emerald-400'
+                      : 'bg-slate-900/90 text-slate-400 border-slate-700'
+                  }`}
+                >
+                  <MilitaryStar className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Ejército SEDENA</span>
+                </button>
+
+                <button
+                  onClick={() => toggleLayer('toll_booth')}
+                  className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-xl text-[10px] sm:text-xs font-bold whitespace-nowrap border flex items-center gap-1 shadow-md transition-all shrink-0 ${
+                    activeLayers.toll_booth
+                      ? 'bg-indigo-600 text-white border-indigo-400'
+                      : 'bg-slate-900/90 text-slate-400 border-slate-700'
+                  }`}
+                >
+                  <TollBoothIcon className="w-3.5 h-3.5 text-cyan-300" />
+                  <span>Casetas & Auxilio</span>
+                </button>
+
                 <button
                   onClick={() => toggleLayer('gas_station')}
                   className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-xl text-[10px] sm:text-xs font-bold whitespace-nowrap border flex items-center gap-1 shadow-md transition-all shrink-0 ${
