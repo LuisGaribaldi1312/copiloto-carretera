@@ -199,6 +199,57 @@ Responde en 2 a 3 oraciones claras, directas y seguras para un conductor al vola
   }
 
   /**
+   * Genera una advertencia de seguridad o recordatorio preventivo con Gemini o motor heurístico.
+   */
+  public static async generateSecurityAlertAudio(context: {
+    alertType: 'speed_warning' | 'night_risk' | 'low_fuel' | 'tire_heat' | 'fatigue_warning' | 'police_nearby';
+    currentSpeed?: number;
+    speedLimit?: number;
+    hoursDriving?: number;
+    poiName?: string;
+  }): Promise<string> {
+    const apiKey = this.getApiKey();
+    let message = '';
+
+    if (context.alertType === 'speed_warning') {
+      message = `Atención: Vas a ${context.currentSpeed || 120} kilómetros por hora. El límite oficial en este tramo es de ${context.speedLimit || 110} kilómetros por hora. Reduce tu velocidad.`;
+    } else if (context.alertType === 'night_risk') {
+      message = 'Alerta de horario nocturno: Mayor índice de riesgo por baja visibilidad. Mantén las luces altas y conserva distancia segura.';
+    } else if (context.alertType === 'low_fuel') {
+      message = 'Aviso de combustible: Nivel de gasolina bajo. Te sugerimos recargar en la próxima estación de servicio.';
+    } else if (context.alertType === 'tire_heat') {
+      message = 'Alerta de neumáticos: Asfalto a alta temperatura. Evita frenadas bruscas para prevenir sobrepresión en llantas.';
+    } else if (context.alertType === 'fatigue_warning') {
+      message = `Llevas más de ${context.hoursDriving || 2} horas continuas al volante. Se recomienda tomar un descanso de 15 minutos en el próximo paradero.`;
+    } else if (context.alertType === 'police_nearby') {
+      message = `Punto de auxilio próximo: ${context.poiName || 'Base de Guardia Nacional y Policía'}. Conduce a velocidad preventiva.`;
+    }
+
+    if (apiKey && navigator.onLine) {
+      try {
+        const ai = new GoogleGenAI({ apiKey });
+        const response = await ai.interactions.create({
+          model: 'gemini-3.8-flash',
+          input: `Redacta una alerta de seguridad automotriz directa, profesional y en tono de copiloto para un conductor de carretera:
+Evento: ${context.alertType}.
+Datos: ${JSON.stringify(context)}.
+Mensaje base: "${message}".
+Devuelve ÚNICAMENTE la frase de alerta (máximo 1 o 2 oraciones concisas y fáciles de escuchar mientras se conduce):`,
+        });
+
+        const refined = response.output_text?.trim();
+        if (refined && refined.length > 5) {
+          return refined;
+        }
+      } catch (e) {
+        console.warn('Fallback a texto predeterminado de alerta:', e);
+      }
+    }
+
+    return message;
+  }
+
+  /**
    * Reproduce una instrucción por voz sintetizada en el altavoz del celular o coche (manos libres).
    */
   public static speak(text: string) {

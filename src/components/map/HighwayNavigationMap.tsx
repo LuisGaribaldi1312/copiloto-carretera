@@ -34,7 +34,11 @@ import {
   PoliceBadge,
   MilitaryStar,
   TollBoothIcon,
+  Mic,
+  Volume2,
+  VolumeX,
 } from '../common/Icons';
+import { VoiceNavigationService, VoiceCommandMatch } from '../../services/voice/voiceNavigationService';
 
 // Configurar iconos por defecto de Leaflet para evitar 404
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -100,7 +104,12 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
   const [isDeepMindModalOpen, setIsDeepMindModalOpen] = useState<boolean>(false);
   const [isDeepMindAnalyzing, setIsDeepMindAnalyzing] = useState<boolean>(false);
 
-  // Estados de conducción y simulación
+  // COMANDOS DE VOZ Y GUÍA POR VOZ TIPO GOOGLE MAPS / WAZE
+  const [isVoiceListening, setIsVoiceListening] = useState<boolean>(false);
+  const [voiceBannerMessage, setVoiceBannerMessage] = useState<string | null>(null);
+  const [isVoiceMuted, setIsVoiceMuted] = useState<boolean>(false);
+  const lastSpokenManeuverRef = useRef<string>('');
+  const lastAlertTimesRef = useRef<Record<string, number>>({});
   const [simCoordIdx, setSimCoordIdx] = useState<number>(0);
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
   const [isFollowing, setIsFollowing] = useState<boolean>(true);
@@ -375,6 +384,15 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
       setOsrmRoute(result);
       setDestination({ lat: destLat, lng: destLng, name: destName });
       setSimCoordIdx(0);
+      lastSpokenManeuverRef.current = '';
+
+      // Anuncio por voz de inicio de ruta (Tipo Google Maps / Waze)
+      if (!isVoiceMuted) {
+        const hours = Math.floor(result.durationMinutes / 60);
+        const mins = result.durationMinutes % 60;
+        const timeStr = hours > 0 ? `${hours} horas y ${mins} minutos` : `${mins} minutos`;
+        DeepMindCopilotService.speak(`Ruta trazada hacia ${destName}. Distancia: ${result.distanceKm} kilómetros, tiempo estimado: ${timeStr}. Buen viaje.`);
+      }
 
       // 1. Precarga predictiva de teselas del corredor para regeneración ultrarrápida (0ms)
       MapOptimizerService.prefetchRouteCorridorTiles(result.coordinates, mapStyle);
@@ -416,6 +434,11 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
     setDeepMindAnalysis(null);
     setSearchQuery('');
     setRouteError(null);
+    lastSpokenManeuverRef.current = '';
+
+    if (!isVoiceMuted) {
+      DeepMindCopilotService.speak('Ruta cancelada.');
+    }
 
     if (routePolylineRef.current) routePolylineRef.current.setLatLngs([]);
     if (corridorPolylineRef.current) corridorPolylineRef.current.setLatLngs([]);
@@ -426,6 +449,79 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
 
     if (userPos && mapInstanceRef.current) {
       mapInstanceRef.current.setView(userPos, 16, { animate: true });
+    }
+  };
+
+  // GESTIÓN DE COMANDOS DE VOZ MANOS LIBRES (GOOGLE MAPS / WAZE)
+  const handleVoiceCommand = (match: VoiceCommandMatch) => {
+    setVoiceBannerMessage(`🎤 "${match.rawTranscript}"`);
+    setTimeout(() => setVoiceBannerMessage(null), 5000);
+
+    if (match.action === 'cancel_route') {
+      handleClearRoute();
+    } else if (match.action === 'recenter') {
+      handleRecenter();
+      if (!isVoiceMuted) DeepMindCopilotService.speak('Ubicación recentrada.');
+    } else if (match.action === 'find_poi' && match.param) {
+      // Activar la capa correspondiente y filtrar
+      const category = match.param as PoiCategory;
+      setActiveLayers((prev) => ({ ...prev, [category]: true }));
+      const catNames: Record<string, string> = {
+        gas_station: 'gasolineras',
+        vulcanizadora: 'vulcanizadoras',
+        police_station: 'bases de policía y guardia nacional',
+        military_checkpoint: 'puntos de control militar',
+        toll_booth: 'casetas de cobro',
+      };
+      if (!isVoiceMuted) {
+        DeepMindCopilotService.speak(`Mostrando ${catNames[category] || 'puntos de asistencia'} cercanos en el mapa.`);
+      }
+    } else if (match.action === 'search_destination' && match.param) {
+      setSearchQuery(match.param);
+      if (!isVoiceMuted) {
+        DeepMindCopilotService.speak(`Buscando ${match.param}...`);
+      }
+      GeocodingService.searchPlaces(match.param).then((places) => {
+        if (places && places.length > 0) {
+          const top = places[0];
+          calculateRouteToDestination(top.lat, top.lng, top.name);
+        } else {
+          if (!isVoiceMuted) DeepMindCopilotService.speak(`No se encontró el destino ${match.param}. Intenta con otra referencia.`);
+        }
+      });
+    } else if (match.action === 'ask_gemini' && match.param) {
+      if (!isVoiceMuted) {
+        DeepMindCopilotService.queryAssistant(match.param).then((answer) => {
+          DeepMindCopilotService.speak(answer);
+        });
+      }
+    }
+  };
+
+  const toggleVoiceAssistant = () => {
+    if (isVoiceListening) {
+      VoiceNavigationService.stopListening();
+      setIsVoiceListening(false);
+      if (!isVoiceMuted) DeepMindCopilotService.speak('Comandos de voz desactivados.');
+    } else {
+      const started = VoiceNavigationService.startListening(
+        handleVoiceCommand,
+        (listening, _transcript, error) => {
+          setIsVoiceListening(listening);
+          if (error && error !== 'no-speech') {
+            console.warn('Reconocimiento de voz:', error);
+          }
+        },
+        true
+      );
+      if (started) {
+        setIsVoiceListening(true);
+        if (!isVoiceMuted) {
+          DeepMindCopilotService.speak('Modo manos libres activado. Di por ejemplo: Llévame a Querétaro, Buscar gasolinera, o Dónde estoy.');
+        }
+      } else {
+        alert('El reconocimiento de voz no está disponible en este navegador o requiere permisos de micrófono.');
+      }
     }
   };
 
@@ -892,6 +988,68 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
     return () => clearInterval(interval);
   }, [isSimulating, useRealGps, routeCoords.length]);
 
+  // VOZ ACTIVA: INDICACIONES PASO A PASO (TIPO GOOGLE MAPS / WAZE)
+  useEffect(() => {
+    if (isVoiceMuted || !osrmRoute || !osrmRoute.steps || osrmRoute.steps.length === 0) return;
+
+    const step = osrmRoute.steps[0];
+    const key = `${step.instruction}_${step.roadName}`;
+
+    // Si la instrucción no se ha dicho aún para este tramo
+    if (key !== lastSpokenManeuverRef.current) {
+      lastSpokenManeuverRef.current = key;
+      const distStr = step.distanceMeters > 950 
+        ? `En ${Math.round(step.distanceMeters / 1000)} kilómetros` 
+        : `En ${step.distanceMeters} metros`;
+      const speech = `${distStr}, ${step.instruction} en ${step.roadName || 'la carretera'}.`;
+      DeepMindCopilotService.speak(speech);
+    }
+  }, [osrmRoute, isVoiceMuted]);
+
+  // VOZ ACTIVA: ALERTAS DE RIESGO PREVENTIVAS CON GEMINI AI
+  useEffect(() => {
+    if (isVoiceMuted) return;
+
+    const now = Date.now();
+    const COOLDOWN_MS = 90000; // Evitar repetir alertas en menos de 90 segundos
+
+    // 1. Alerta de exceso de velocidad
+    if (speedKmh > 115) {
+      const last = lastAlertTimesRef.current['speed'] || 0;
+      if (now - last > COOLDOWN_MS) {
+        lastAlertTimesRef.current['speed'] = now;
+        DeepMindCopilotService.generateSecurityAlertAudio({
+          alertType: 'speed_warning',
+          currentSpeed: speedKmh,
+          speedLimit: 110,
+        }).then((text) => DeepMindCopilotService.speak(text));
+      }
+    }
+
+    // 2. Alerta de combustible bajo
+    if (profile.currentFuelLiters <= profile.tankCapacityLiters * 0.15) {
+      const last = lastAlertTimesRef.current['fuel'] || 0;
+      if (now - last > COOLDOWN_MS * 2) {
+        lastAlertTimesRef.current['fuel'] = now;
+        DeepMindCopilotService.generateSecurityAlertAudio({
+          alertType: 'low_fuel',
+        }).then((text) => DeepMindCopilotService.speak(text));
+      }
+    }
+
+    // 3. Alerta de horario nocturno
+    const hour = new Date().getHours();
+    if ((hour >= 21 || hour < 5) && speedKmh > 30) {
+      const last = lastAlertTimesRef.current['night'] || 0;
+      if (now - last > COOLDOWN_MS * 3) {
+        lastAlertTimesRef.current['night'] = now;
+        DeepMindCopilotService.generateSecurityAlertAudio({
+          alertType: 'night_risk',
+        }).then((text) => DeepMindCopilotService.speak(text));
+      }
+    }
+  }, [speedKmh, profile.currentFuelLiters, isVoiceMuted]);
+
   const toggleLayer = (layer: PoiCategory) => {
     setActiveLayers((prev) => ({
       ...prev,
@@ -966,12 +1124,42 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Busca destino o negocio (ej. Pemex, Oxxo, Taller, Puebla)..."
+                placeholder="Busca destino o di 'Ir a...' (ej. Puebla, Pemex, Oxxo)..."
                 className="w-full bg-transparent text-xs sm:text-sm text-white placeholder-slate-400 focus:outline-none font-medium"
               />
               {(isLoadingRoute || isSearching || isLoadingBusinesses) && (
                 <span className="animate-spin text-amber-400 text-xs px-1">⏳</span>
               )}
+
+              {/* Botón Micrófono para Comandos de Voz Manos Libres (Tipo Google Maps / Waze) */}
+              <button
+                onClick={toggleVoiceAssistant}
+                title={isVoiceListening ? 'Desactivar escucha por voz' : 'Activar Comandos de Voz (Manos Libres)'}
+                className={`p-1.5 rounded-xl flex items-center justify-center transition-all ${
+                  isVoiceListening
+                    ? 'bg-rose-600 text-white animate-pulse ring-2 ring-rose-400 shadow-lg shadow-rose-600/40'
+                    : 'bg-slate-800 text-amber-400 hover:bg-slate-700'
+                }`}
+              >
+                {isVoiceListening ? <Mic className="w-4 h-4 animate-bounce" /> : <Mic className="w-4 h-4" />}
+              </button>
+
+              {/* Botón Silenciar / Activar Voz del Copiloto */}
+              <button
+                onClick={() => {
+                  const nextMuted = !isVoiceMuted;
+                  setIsVoiceMuted(nextMuted);
+                  if (!nextMuted) {
+                    DeepMindCopilotService.speak('Voz del copiloto activada.');
+                  } else {
+                    window.speechSynthesis?.cancel();
+                  }
+                }}
+                title={isVoiceMuted ? 'Activar voz de indicaciones' : 'Silenciar voz'}
+                className="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-all"
+              >
+                {isVoiceMuted ? <VolumeX className="w-4 h-4 text-slate-500" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+              </button>
               {destination && (
                 <button
                   onClick={handleClearRoute}
@@ -1037,6 +1225,18 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
             </div>
           </div>
         </div>
+
+        {/* Banner de Comando de Voz Reconocido (Manos Libres) */}
+        {voiceBannerMessage && (
+          <div className="bg-slate-900/95 border border-rose-500/80 rounded-2xl p-2.5 shadow-2xl backdrop-blur-md flex items-center gap-2.5 pointer-events-auto max-w-sm sm:max-w-lg animate-fade-in">
+            <div className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
+              <Mic className="w-4 h-4 animate-pulse" />
+            </div>
+            <div className="text-xs text-white font-bold truncate">
+              {voiceBannerMessage}
+            </div>
+          </div>
+        )}
 
         {/* Banner de Próxima Maniobra OSRM */}
         {osrmRoute && (
@@ -1104,6 +1304,19 @@ export const HighwayNavigationMap: React.FC<Props> = ({ profile, onOpenSos }) =>
           className="w-9 h-9 sm:w-11 sm:h-11 bg-slate-900/95 hover:bg-slate-800 border border-slate-700/80 rounded-2xl text-amber-400 shadow-2xl backdrop-blur-xl flex items-center justify-center transition-all hover:scale-105 active:scale-95"
         >
           <Crosshair className="w-4 h-4 sm:w-5 sm:h-5" />
+        </button>
+
+        {/* Botón Comandos de Voz Manos Libres en el Dock Derecho */}
+        <button
+          onClick={toggleVoiceAssistant}
+          title={isVoiceListening ? 'Desactivar escucha por voz' : 'Activar Comandos de Voz Manos Libres'}
+          className={`w-9 h-9 sm:w-11 sm:h-11 rounded-2xl border shadow-2xl backdrop-blur-xl flex items-center justify-center transition-all hover:scale-105 active:scale-95 ${
+            isVoiceListening
+              ? 'bg-rose-600 border-rose-400 text-white animate-pulse shadow-rose-600/50'
+              : 'bg-slate-900/95 hover:bg-slate-800 border-slate-700/80 text-amber-400'
+          }`}
+        >
+          {isVoiceListening ? <Mic className="w-4 h-4 sm:w-5 sm:h-5 text-white" /> : <Mic className="w-4 h-4 sm:w-5 sm:h-5" />}
         </button>
 
         {/* Alternar Modo GPS (Real / Simulado) */}

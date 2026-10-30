@@ -309,5 +309,33 @@ export const TollBoothIcon: React.FC<IconProps> = ({ className = 'w-5 h-5', ...p
   </svg>
 );
 
+export const Mic: React.FC<IconProps> = ({ className = 'w-5 h-5', ...props }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+    <line x1="12" y1="19" x2="12" y2="22"/>
+  </svg>
+);
+
+export const MicOff: React.FC<IconProps> = ({ className = 'w-5 h-5', ...props }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+    <line x1="2" y1="2" x2="22" y2="22"/>
+    <path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/>
+    <path d="M5 10v2a7 7 0 0 0 12 5"/>
+    <path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/>
+    <path d="M9 9v3a3 3 0 0 0 5.12 2.12"/>
+    <line x1="12" y1="19" x2="12" y2="22"/>
+  </svg>
+);
+
+export const VolumeX: React.FC<IconProps> = ({ className = 'w-5 h-5', ...props }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+    <line x1="22" y1="9" x2="16" y2="15"/>
+    <line x1="16" y1="9" x2="22" y2="15"/>
+  </svg>
+);
+
+
 
 
